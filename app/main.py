@@ -32,7 +32,7 @@ async def get_task(task_id: int):
 
 @app.put("/tasks/{task_id}/", response_model=Task)
 async def updtate_task(task_id: int, updated_task: Task):
-    for index, task in enumarate(tasks):
+    for index, task in enumerate(tasks):
         if task.id == task_id:
             tasks[index] = updated_task
             return updated_task
