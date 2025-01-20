@@ -1,39 +1,49 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 from typing import List
+from fastapi import HTTPException, Depends
+from sqlalchemy.orm import Session
+from starlette import status
+from .models import Tasks
+from .schemas import TaskCreate, TaskBase
+from fastapi import APIRouter
+from .database import get_db
 
-app = FastAPI()
+app = APIRouter()
+@app.get("/tasks/", response_model=List[TaskCreate])
+def get_tasks(db: Session = Depends(get_db)):
+    return db.query(Tasks).all()
 
-class Task(BaseModel):
-    id: int
-    title: str
-    description: str = None
-    completed: bool = False
+@app.post("/tasks/", response_model=List[TaskCreate])
+def create_task(task: TaskBase, db: Session = Depends(get_db)):
+    new_task = Tasks(**task.dict())
+    db.add(new_task)
+    db.commit()
+    db.refresh(new_task)
+    return [new_task]
 
-tasks: List[Task] = []
+@app.get("/tasks/{task_id}/", response_model=TaskCreate)
+def get_one_task(task_id:int, db:Session = Depends(get_db)):
+    idv_task = db.query(Tasks).filter(Tasks.id == task_id).first()
+    
+    if idv_task is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"A task específica não existe")
+    return idv_task
 
-@app.get("/tasks/", response_model=List[Task])
-async def get_tasks():
-    return tasks
+@app.put("/tasks/{task_id}/", response_model=TaskCreate)
+def update_task(task_data:TaskBase, task_id:int, db:Session = Depends(get_db)):
+    task_query = db.query(Tasks).filter(Tasks.id == task_id)
+    
+    if task_query.first() is None:
+        raise HTTPException(status_code=status.HTTP_400_NOT_FOUND, detail=f"A task específica não existe")
+    task_query.update(task_data.dict(), synchronize_session=False)
+    db.commit()
+    
+    return task_query.first()
 
-@app.post("/tasks/", response_model=Task)
-async def create_task(task: Task):
-    if any(e.id == task.id for e in tasks):
-        raise HTTPException(status_code=400, detail="Task já existente")
-    tasks.append(task)
-    return task
-
-@app.get("/tasks/{task_id}/", response_model=Task)
-async def get_task(task_id: int):
-    for task in tasks:
-        if task.id == task_id:
-            return task
-    raise HTTPException(status_code=404, detail="Task não encontrada.")
-
-@app.put("/tasks/{task_id}/", response_model=Task)
-async def updtate_task(task_id: int, updated_task: Task):
-    for index, task in enumerate(tasks):
-        if task.id == task_id:
-            tasks[index] = updated_task
-            return updated_task
-        raise HTTPException(status_code=404, detail="Task não encontrada.")
+@app.delete("/tasks/{task_id}/")
+def delete_task(task_id:int, db:Session = Depends(get_db)):
+    deleted_task = db.query(Tasks).filter(Tasks.id == task_id)
+    
+    if deleted_task.first() is None:
+        raise HTTPException(status_code=status.HTTP_400_NOT_FOUND, detail=f"A task específica não existe")
+    deleted_task.delete(synchronize_session=False)
+    db.commit()
